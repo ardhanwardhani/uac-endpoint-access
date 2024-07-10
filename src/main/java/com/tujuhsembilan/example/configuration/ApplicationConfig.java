@@ -26,8 +26,11 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.util.matcher.AndRequestMatcher;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.util.ResourceUtils;
 
@@ -67,13 +70,16 @@ public class ApplicationConfig {
   // --- Security Configuration
 
   @Bean
-  public SecurityFilterChain securityConfig(HttpSecurity http, PasswordEncoder passwordEncoder, AuthProp prop)
+  public SecurityFilterChain securityConfig(HttpSecurity http, PasswordEncoder passwordEncoder, AuthProp prop, JwtAuthenticationConverter jwtAuthenticationConverter)
       throws Exception {
     http
         // Access Control
         .authorizeHttpRequests(req -> req
             .requestMatchers(AntPathRequestMatcher.antMatcher("/auth/jwks.json")).permitAll()
             .requestMatchers(AntPathRequestMatcher.antMatcher("/auth/login")).permitAll()
+            .requestMatchers(AntPathRequestMatcher.antMatcher("/sample/data-a")).hasAuthority("ROLE_A")
+            .requestMatchers(AntPathRequestMatcher.antMatcher("/sample/data-b")).hasAuthority("ROLE_B")
+            .requestMatchers(AntPathRequestMatcher.antMatcher("/sample/data-c")).hasAnyAuthority("ROLE_A", "ROLE_B")
             .anyRequest().authenticated())
         // Authorization (DEFAULT IN MEM)
         .userDetailsService(new InMemoryUserDetailsManager(
@@ -94,7 +100,7 @@ public class ApplicationConfig {
         .httpBasic(Customizer.withDefaults())
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         // Authentication
-        .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()))
+        .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
         // Miscellaneous
         .csrf(AbstractHttpConfigurer::disable);
 
@@ -137,6 +143,18 @@ public class ApplicationConfig {
             jwt -> OAuth2TokenValidatorResult.success()));
 
     return jwtDecoder;
+  }
+
+  @Bean
+  public JwtAuthenticationConverter jwtAuthenticationConverter() {
+    JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
+    grantedAuthoritiesConverter.setAuthoritiesClaimName("role");
+    grantedAuthoritiesConverter.setAuthorityPrefix("");
+
+    JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
+    jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter);
+
+    return jwtAuthenticationConverter;
   }
 
 }

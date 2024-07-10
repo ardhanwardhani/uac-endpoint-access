@@ -1,12 +1,16 @@
 package com.tujuhsembilan.example.controller;
 
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -34,10 +38,8 @@ import lombok.RequiredArgsConstructor;
 public class BasicLoginController {
 
   private final ObjectMapper objMap;
-
   private final JwtEncoder jwtEncoder;
   private final AuthProp authProp;
-
   private final ECKey ecJwk;
 
   @GetMapping("/jwks.json")
@@ -45,9 +47,18 @@ public class BasicLoginController {
     return ResponseEntity.ok(Map.of("keys", Set.of(objMap.readTree(ecJwk.toPublicJWK().toJSONString()))));
   }
 
-  // You MUST login using BASIC AUTH, NOT POST BODY
+  // You MUST log in using BASIC AUTH, NOT POST BODY
   @PostMapping("/login")
   public ResponseEntity<?> login(@NotNull Authentication auth) {
+    Instant now = Instant.now();
+    Instant expirationTime = now.plusSeconds(3600);
+
+    // Ambil authorities dari principal (pengguna yang sudah di-authenticate)
+    Collection<? extends GrantedAuthority> authorities = auth.getAuthorities();
+
+    // Ambil role pertama dari authorities (asumsi satu user hanya punya satu role)
+    String role = authorities.isEmpty() ? "" : authorities.iterator().next().getAuthority();
+
     var jwt = jwtEncoder
         .encode(JwtEncoderParameters.from(JwsHeader.with(SignatureAlgorithm.ES512).build(),
             JwtClaimsSet.builder()
@@ -55,6 +66,8 @@ public class BasicLoginController {
                 .audience(List.of(authProp.getUuid()))
                 .subject(((User) auth.getPrincipal()).getUsername())
                 // You SHOULD set expiration, claims, etc here too
+                .expiresAt(expirationTime)
+                .claim("role", role)
                 .build()));
     return ResponseEntity.ok(jwt.getTokenValue());
   }
